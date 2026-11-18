@@ -86,3 +86,55 @@ You can monitor the execution of the workflow in real-time by using the `-html` 
 ./tools/syz-env ./syz-aflow -workflow patching -input input.json -workdir ./workdir -html trajectory.html
 ```
 Open the specified HTML file in your browser to see the charts and steps as they execute.
+
+### OpenAI-compatible Chat Completions
+
+Select `-provider openai` and an explicit `-model`. Set `OPENAI_BASE_URL` to the API root
+(including its path prefix, such as `/v1`); the provider appends `/chat/completions`.
+Alternatively, `-openai-base-url` overrides the environment variable. `OPENAI_API_KEY`,
+when nonempty, supplies Bearer authentication. Leave it unset for unauthenticated local services.
+
+For an existing seedgen task:
+
+```bash
+OPENAI_BASE_URL=https://example.invalid/v1 ./syz-aflow \
+  -provider openai -model your-model \
+  -workflow seed-gen-file-line -input task.json -workdir ./workdir-openai
+```
+
+This command runs the workflow, including its kernel preparation and VM execution;
+provider initialization itself does not contact the endpoint. A provider connection
+does not establish that the generated program reaches the target: use the workflow's
+coverage checks and independent replay.
+
+OpenAI-specific options:
+
+| Flag | Default | Purpose |
+| --- | --- | --- |
+| `-openai-base-url` | `OPENAI_BASE_URL` | API root; required, with no public-service fallback |
+| `-openai-request-timeout` | `10m` | Timeout for one model request |
+| `-openai-max-output-tokens` | `16384` | Requested output limit |
+| `-openai-output-token-field` | `max_tokens` | Select `max_tokens` or `max_completion_tokens` |
+
+The same model handles all aflow model categories. Requests are non-streaming and use
+native function tools. Structured outputs use aflow's existing `set-results` tool.
+Services must support tool-call IDs and return `prompt_tokens` and `completion_tokens`;
+missing usage is an error. Reasoning-specific options and Responses API are not supported.
+Reported completion tokens already include any reasoning tokens, which are not counted again.
+
+The provider does not retry internally: transient errors are returned to aflow's existing
+retry loop. Authentication, recognized permanent quota errors, and invalid model/options
+fail explicitly. `-token-limit` accounts for successful response usage, including cached
+responses, and is not an exact billing cap for failed or retried requests.
+
+LLM cache keys include a credential-free provider identity, separating endpoints and
+generation settings. Use a new workdir when the service changes the model behind an
+unchanged name/address. This also separates completed batch-task records.
+
+The implementation is isolated in `pkg/aflow/backend/openai` and its CLI registration file.
+The only agent extension is the optional backend cache identity. Local tests require
+neither credentials nor a model service:
+
+```bash
+go test ./pkg/aflow/backend/... ./pkg/aflow ./tools/syz-aflow
+```

@@ -33,7 +33,7 @@ func main() {
 		flagParallel    = flag.Int("parallel", 1, "number of parallel workflows to run in batch execution")
 		flagWorkdir     = flag.String("workdir", "", "directory for kernel checkout, kernel builds, etc")
 		flagModel       = flag.String("model", "", "use this LLM model, if empty use default models")
-		flagProvider    = flag.String("provider", "gemini", "LLM provider to use (gemini, vertex)")
+		flagProvider    = flag.String("provider", "gemini", "LLM provider to use (gemini, vertex, openai)")
 		flagCacheSize   = flag.String("cache-size", "10GB", "max cache size (e.g. 100MB, 5GB, 1TB)")
 		flagDownloadBug = flag.String("download-bug", "", "extid or id of a bug to download from the dashboard"+
 			" and save into -input file")

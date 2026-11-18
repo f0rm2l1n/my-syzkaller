@@ -124,6 +124,13 @@ type Provider interface {
 	Close() error
 }
 
+// CacheIdentityProvider optionally separates LLM responses by provider configuration.
+// The identity must be stable and must not contain credentials. Providers that do
+// not implement this interface retain the existing cache behavior.
+type CacheIdentityProvider interface {
+	CacheIdentity() string
+}
+
 // RetryError indicates that the request failed but should be retried.
 type RetryError struct {
 	Delay         time.Duration

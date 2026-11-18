@@ -1167,6 +1167,9 @@ func (a *LLMAgent) generateContentCached(ctx *Context, cfg *backend.GenerateConf
 	}
 	desc := fmt.Sprintf("model %v, config hash %v, request hash %v, candidate %v",
 		model, hash.String(cfg), hash.String(req), candidate)
+	if provider, ok := ctx.provider.(backend.CacheIdentityProvider); ok {
+		desc += fmt.Sprintf(", provider %v", provider.CacheIdentity())
+	}
 	cached, _, err := CacheObject(ctx, "llm", desc, func() (Cached, error) {
 		resp, err := ctx.generateContent(model, cfg, req)
 		return Cached{
