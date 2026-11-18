@@ -10,6 +10,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/google/syzkaller/pkg/aflow"
 	"github.com/google/syzkaller/pkg/config"
@@ -18,12 +19,13 @@ import (
 )
 
 const (
+	backendOpenAI = "openai"
 	backendGemini = "gemini"
 	backendVertex = "vertex"
 	defaultVMType = "qemu"
 )
 
-var supportedBackends = []string{backendGemini, backendVertex}
+var supportedBackends = []string{backendOpenAI, backendGemini, backendVertex}
 
 type TargetConfig struct {
 	Target       string          `json:"target"`
@@ -52,11 +54,13 @@ type Config struct {
 	Targets         map[string]*TargetConfig `json:"targets"`
 	CacheSize       uint64                   `json:"cache_size"`
 	Model           string                   `json:"model"`
-	// Mapping from workflow name to LLM backend (e.g. "gemini", "vertex").
+	// Mapping from workflow name to LLM backend (e.g. "openai", "gemini", "vertex").
 	WorkflowBackends map[string]string `json:"workflow_backends"`
-	// The default LLM backend to use if not specified in WorkflowBackends. Defaults to "gemini".
+	// The default LLM backend to use if not specified in WorkflowBackends. Defaults to "openai".
 	DefaultBackend string `json:"default_backend"`
 	GeminiAPIKey   string `json:"gemini_api_key"`
+	OpenAIBaseURL  string `json:"openai_base_url"`
+	OpenAIAPIKey   string `json:"openai_api_key"`
 	CloudProject   string `json:"-"`
 	SafetyFilters  bool   `json:"safety_filters"`
 }
@@ -67,7 +71,9 @@ func loadConfig(configFile string) (*Config, error) {
 		SyzkallerBranch: "master",
 		CacheSize:       1 << 40, // 1TB
 		GeminiAPIKey:    "env:GOOGLE_API_KEY",
-		DefaultBackend:  backendGemini,
+		OpenAIBaseURL:   "env:OPENAI_BASE_URL",
+		OpenAIAPIKey:    "env:OPENAI_API_KEY",
+		DefaultBackend:  backendOpenAI,
 		SafetyFilters:   true,
 	}
 	if err := config.LoadFile(configFile, cfg); err != nil {
@@ -122,18 +128,6 @@ func loadConfig(configFile string) (*Config, error) {
 	}
 	cfg.DashboardClient = resolvedDashClient
 
-	resolvedGeminiKey, err := gcpsecret.Resolve(context.Background(), cfg.GeminiAPIKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve GeminiAPIKey: %w", err)
-	}
-	cfg.GeminiAPIKey = resolvedGeminiKey
-
-	resolvedCloudProject, err := resolveCloudProject(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve CloudProject: %w", err)
-	}
-	cfg.CloudProject = resolvedCloudProject
-
 	if !slices.Contains(supportedBackends, cfg.DefaultBackend) {
 		return nil, fmt.Errorf("default_backend must be one of %v, got %q", supportedBackends, cfg.DefaultBackend)
 	}
@@ -147,8 +141,52 @@ func loadConfig(configFile string) (*Config, error) {
 				w, b, supportedBackends)
 		}
 	}
+	if usesBackend(cfg, backendOpenAI) {
+		if strings.TrimSpace(cfg.Model) == "" {
+			return nil, fmt.Errorf("model is required when using the %s backend", backendOpenAI)
+		}
+		resolvedBaseURL, err := gcpsecret.Resolve(context.Background(), cfg.OpenAIBaseURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve OpenAIBaseURL: %w", err)
+		}
+		cfg.OpenAIBaseURL = resolvedBaseURL
+		resolvedAPIKey, err := gcpsecret.Resolve(context.Background(), cfg.OpenAIAPIKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve OpenAIAPIKey: %w", err)
+		}
+		cfg.OpenAIAPIKey = resolvedAPIKey
+		if strings.TrimSpace(cfg.OpenAIBaseURL) == "" {
+			return nil, fmt.Errorf("openai_base_url is required when using the %s backend", backendOpenAI)
+		}
+	}
+	if usesBackend(cfg, backendGemini) {
+		resolvedGeminiKey, err := gcpsecret.Resolve(context.Background(), cfg.GeminiAPIKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve GeminiAPIKey: %w", err)
+		}
+		cfg.GeminiAPIKey = resolvedGeminiKey
+	}
+	if usesBackend(cfg, backendVertex) {
+		resolvedCloudProject, err := resolveCloudProject(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve CloudProject: %w", err)
+		}
+		cfg.CloudProject = resolvedCloudProject
+	}
 
 	return cfg, nil
+}
+
+func usesBackend(cfg *Config, name string) bool {
+	if cfg.DefaultBackend == name {
+		return true
+	}
+	for _, backend := range cfg.WorkflowBackends {
+		if backend == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (cfg *Config) targetConfig(args map[string]any) (*TargetConfig, error) {

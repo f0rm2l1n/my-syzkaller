@@ -33,7 +33,8 @@ func TestConfigPlainValues(t *testing.T) {
 		},
 		"dashboard_client": "test-dashboard-client",
 		"dashboard_key": "test-dashboard-key",
-		"gemini_api_key": "test-gemini-key"
+		"gemini_api_key": "test-gemini-key",
+		"default_backend": "gemini"
 	}`
 	err = os.WriteFile(confFile, []byte(content), 0644)
 	assert.NoError(t, err)
@@ -61,7 +62,8 @@ func TestConfigEnvResolution(t *testing.T) {
 		},
 		"dashboard_client": "env:CLIENT_ENV",
 		"dashboard_key": "env:DASHBOARD_ENV",
-		"gemini_api_key": "env:GEMINI_ENV"
+		"gemini_api_key": "env:GEMINI_ENV",
+		"default_backend": "gemini"
 	}`
 	err = os.WriteFile(confFile, []byte(content), 0644)
 	assert.NoError(t, err)
@@ -93,7 +95,8 @@ func TestConfigBackendRoutingValidation(t *testing.T) {
 				}
 			},
 			"dashboard_client": "client",
-			"dashboard_key": "key"` + extra + `
+			"dashboard_key": "key",
+			"default_backend": "gemini"` + extra + `
 		}`
 		err := os.WriteFile(confFile, []byte(content), 0644)
 		assert.NoError(t, err)
@@ -103,8 +106,7 @@ func TestConfigBackendRoutingValidation(t *testing.T) {
 		writeConfig(t, `,
 			"workflow_backends": {
 				"repro-c": "vertex"
-			},
-			"default_backend": "gemini"`)
+			}`)
 
 		cfg, err := loadConfig(confFile)
 		assert.NoError(t, err)
@@ -155,6 +157,74 @@ func TestConfigBackendRoutingValidation(t *testing.T) {
 	})
 }
 
+func TestConfigOpenAI(t *testing.T) {
+	tmpDir := t.TempDir()
+	confFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"targets": {"linux/amd64": {"image": "image1"}},
+		"dashboard_client": "client",
+		"dashboard_key": "key",
+		"model": "csi-provider/GLM-5.2",
+		"openai_base_url": "env:OPENAI_TEST_BASE_URL",
+		"openai_api_key": "env:OPENAI_TEST_API_KEY"
+	}`
+	require.NoError(t, os.WriteFile(confFile, []byte(content), 0644))
+	t.Setenv("OPENAI_TEST_BASE_URL", "http://localhost:8080/v1")
+	t.Setenv("OPENAI_TEST_API_KEY", "test-key")
+
+	cfg, err := loadConfig(confFile)
+	require.NoError(t, err)
+	require.Equal(t, backendOpenAI, cfg.DefaultBackend)
+	require.Equal(t, "csi-provider/GLM-5.2", cfg.Model)
+	require.Equal(t, "http://localhost:8080/v1", cfg.OpenAIBaseURL)
+	require.Equal(t, "test-key", cfg.OpenAIAPIKey)
+}
+
+func TestConfigOpenAIValidation(t *testing.T) {
+	writeConfig := func(t *testing.T, extra string) string {
+		t.Helper()
+		confFile := filepath.Join(t.TempDir(), "config.json")
+		content := `{
+			"targets": {"linux/amd64": {"image": "image1"}},
+			"dashboard_client": "client",
+			"dashboard_key": "key",
+			"default_backend": "openai"` + extra + `
+		}`
+		require.NoError(t, os.WriteFile(confFile, []byte(content), 0644))
+		return confFile
+	}
+
+	t.Run("requires model", func(t *testing.T) {
+		_, err := loadConfig(writeConfig(t, `,
+			"openai_base_url": "http://localhost/v1"`))
+		require.ErrorContains(t, err, "model is required")
+	})
+	t.Run("requires base URL", func(t *testing.T) {
+		_, err := loadConfig(writeConfig(t, `,
+			"model": "test-model"`))
+		require.ErrorContains(t, err, "openai_base_url is required")
+	})
+}
+
+func TestConfigWorkflowOpenAI(t *testing.T) {
+	tmpDir := t.TempDir()
+	confFile := filepath.Join(tmpDir, "config.json")
+	content := `{
+		"targets": {"linux/amd64": {"image": "image1"}},
+		"dashboard_client": "client",
+		"dashboard_key": "key",
+		"default_backend": "gemini",
+		"workflow_backends": {"repro-c": "openai"},
+		"model": "test-model",
+		"openai_base_url": "http://localhost/v1"
+	}`
+	require.NoError(t, os.WriteFile(confFile, []byte(content), 0644))
+
+	cfg, err := loadConfig(confFile)
+	require.NoError(t, err)
+	require.Equal(t, backendOpenAI, cfg.WorkflowBackends["repro-c"])
+}
+
 func TestConfigSafetyFilters(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "syz-agent-test")
 	assert.NoError(t, err)
@@ -166,6 +236,7 @@ func TestConfigSafetyFilters(t *testing.T) {
 			"targets": {"linux/amd64": {"image": "image1"}},
 			"dashboard_client": "test-client",
 			"dashboard_key": "test-key",
+			"default_backend": "gemini",
 			"safety_filters": ` + val + `
 		}`
 		err := os.WriteFile(confFile, []byte(content), 0644)

@@ -22,6 +22,8 @@ approach for testing and development.
        "dashboard_client": "my-local-agent",
        "dashboard_addr": "https://syzkaller.appspot.com",
        "dashboard_key": "YOUR_KEY",
+       "default_backend": "gemini",
+       "gemini_api_key": "env:GOOGLE_API_KEY",
        "targets": {
          "linux/amd64": {
            "image": "/disk-images/buildroot_amd64",
@@ -69,3 +71,23 @@ minikube image load local/syz-agent:latest
 # 2. Deploy (automatically binds host's GOOGLE_API_KEY and DASHBOARD_KEY)
 GOOGLE_API_KEY=xxx DASHBOARD_KEY=yyy make k8s-minikube | kubectl apply -f -
 ```
+
+### OpenAI-compatible backend
+
+The default backend for new configurations is `openai`. Select it explicitly in a
+configuration and provide the model and API root through the existing `env:` or
+`gcp-secret:` value resolution:
+
+```json
+{
+  "default_backend": "openai",
+  "model": "your-model",
+  "openai_base_url": "env:OPENAI_BASE_URL",
+  "openai_api_key": "env:OPENAI_API_KEY"
+}
+```
+
+OpenAI uses the same model for all aflow model categories and the existing
+non-streaming Chat Completions provider. It requires native tool calls and valid
+`prompt_tokens`/`completion_tokens` usage. Existing Gemini or Vertex deployments
+should set `default_backend` explicitly until an OpenAI endpoint is configured.

@@ -2,6 +2,7 @@
   "dashboard_addr": "https://syzbot.org",
   "dashboard_client": "agent",
   "dashboard_key": "env:DASHBOARD_KEY",
+  "default_backend": "gemini",
   "gemini_api_key": "env:GOOGLE_API_KEY",
   "cache_size": 32000000000,
   "targets": {

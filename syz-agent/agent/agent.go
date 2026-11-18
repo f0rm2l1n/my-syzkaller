@@ -18,7 +18,9 @@ import (
 
 	"github.com/google/syzkaller/dashboard/dashapi"
 	"github.com/google/syzkaller/pkg/aflow"
+	aflowbackend "github.com/google/syzkaller/pkg/aflow/backend"
 	"github.com/google/syzkaller/pkg/aflow/backend/gemini"
+	"github.com/google/syzkaller/pkg/aflow/backend/openai"
 	_ "github.com/google/syzkaller/pkg/aflow/flow"
 	"github.com/google/syzkaller/pkg/aflow/trajectory"
 	"github.com/google/syzkaller/pkg/log"
@@ -320,25 +322,11 @@ func (s *Server) executeJob(ctx context.Context, req *dashapi.AIJobPollResp) (ou
 			Span:      &sendSpan,
 		})
 	}
-	backend := s.cfg.DefaultBackend
+	backendName := s.cfg.DefaultBackend
 	if b, ok := s.cfg.WorkflowBackends[req.Workflow]; ok {
-		backend = b
+		backendName = b
 	}
-
-	geminiCfg := gemini.Config{
-		ModelOverride:   s.cfg.Model,
-		NoSafetyFilters: !s.cfg.SafetyFilters,
-	}
-	switch backend {
-	case backendVertex:
-		geminiCfg.VertexProject = s.cfg.CloudProject
-	case backendGemini, "":
-		geminiCfg.APIKeys = gemini.ParseAPIKeys(s.cfg.GeminiAPIKey)
-	default:
-		return nil, fmt.Errorf("unknown LLM backend %q configured for workflow %q", backend, req.Workflow)
-	}
-
-	provider, err := gemini.NewProvider(ctx, geminiCfg)
+	provider, err := s.newLLMProvider(ctx, backendName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize LLM provider: %w", err)
 	}
@@ -350,6 +338,34 @@ func (s *Server) executeJob(ctx context.Context, req *dashapi.AIJobPollResp) (ou
 		OnEvent:    onEvent,
 		TokenLimit: defaultTokenLimit,
 	})
+}
+
+func (s *Server) newLLMProvider(ctx context.Context, backendName string) (aflowbackend.Provider, error) {
+	switch backendName {
+	case backendOpenAI:
+		provider, err := openai.NewProvider(openai.Config{
+			BaseURL: s.cfg.OpenAIBaseURL,
+			Model:   s.cfg.Model,
+			APIKey:  s.cfg.OpenAIAPIKey,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return provider, nil
+	case backendVertex:
+		return gemini.NewProvider(ctx, gemini.Config{
+			ModelOverride: s.cfg.Model,
+			VertexProject: s.cfg.CloudProject,
+		})
+	case backendGemini, "":
+		return gemini.NewProvider(ctx, gemini.Config{
+			ModelOverride:   s.cfg.Model,
+			NoSafetyFilters: !s.cfg.SafetyFilters,
+			APIKeys:         gemini.ParseAPIKeys(s.cfg.GeminiAPIKey),
+		})
+	default:
+		return nil, fmt.Errorf("unknown LLM backend %q", backendName)
+	}
 }
 
 func (s *Server) modelOverQuota(flow *aflow.Flow) bool {
