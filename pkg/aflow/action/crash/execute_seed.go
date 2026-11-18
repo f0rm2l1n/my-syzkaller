@@ -94,6 +94,7 @@ func ExecuteSeedFunc(ctx *aflow.Context, args ExecuteSeedArgs) (string, error) {
 		if runRes.Status == queue.ExecFailure && runRes.Err != nil {
 			res.Error = runRes.Err.Error()
 		}
+		res.ConsoleOutput = string(runRes.Output)
 
 		if runRes.Info != nil {
 			res.CallErrors = extractCallErrors(runRes.Info, p.Calls)

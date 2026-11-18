@@ -237,6 +237,38 @@ type cachedExecution struct {
 	Coverage       [][]symbolizer.Frame
 	CallErrors     []CallError
 	GeneratedSyz   string
+	// ConsoleOutput is retained for semantic experiments which emit
+	// structured, execution-scoped observations from the guest kernel.
+	ConsoleOutput string
+}
+
+// ExecutionEvidence is the durable result of one syz program execution.
+// It is intentionally additive to the existing execution cache contract.
+type ExecutionEvidence struct {
+	GeneratedSyz  string
+	CallErrors    []CallError
+	Coverage      [][]symbolizer.Frame
+	ConsoleOutput string
+	BugTitle      string
+	Report        string
+	Error         string
+}
+
+// LoadExecutionEvidence retrieves all evidence needed by a semantic experiment.
+func LoadExecutionEvidence(ctx *aflow.Context, cachedID string) (ExecutionEvidence, error) {
+	cached, err := aflow.RetrieveObject[cachedExecution](ctx, cachedID)
+	if err != nil {
+		return ExecutionEvidence{}, err
+	}
+	return ExecutionEvidence{
+		GeneratedSyz:  cached.GeneratedSyz,
+		CallErrors:    cached.CallErrors,
+		Coverage:      cached.Coverage,
+		ConsoleOutput: cached.ConsoleOutput,
+		BugTitle:      cached.BugTitle,
+		Report:        cached.Report,
+		Error:         cached.Error,
+	}, nil
 }
 
 // LoadCoverage retrieves the symbolized coverage frames from a cached execution.

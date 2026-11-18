@@ -1,0 +1,11 @@
+# This description is copied into the private Linux fixture's sys/linux tree
+# and regenerated with make generate. The ioctl values are for amd64.
+include <asm/ioctl.h>
+include <linux/fcntl.h>
+
+resource fd_llm_async[fd]
+
+openat$llm_async(fd const[AT_FDCWD], file ptr[in, string["/dev/llm_async_demo"]], flags flags[open_flags], mode const[0]) fd_llm_async
+ioctl$LLM_ASYNC_SUBMIT(fd fd_llm_async, cmd const[0x4c01], arg const[0])
+ioctl$LLM_ASYNC_CANCEL(fd fd_llm_async, cmd const[0x4c02], arg const[0])
+ioctl$LLM_ASYNC_DELAY(fd fd_llm_async, cmd const[0x40044c03], arg ptr[in, int32])

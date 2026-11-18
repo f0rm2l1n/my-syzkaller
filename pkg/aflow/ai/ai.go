@@ -24,6 +24,7 @@ const (
 	WorkflowFindingTriage      = WorkflowType("finding-triage")
 	WorkflowBisectCause        = WorkflowType("bisect-cause")
 	WorkflowBisectFix          = WorkflowType("bisect-fix")
+	WorkflowRuntimeExperiment  = WorkflowType("runtime-guided-experiment")
 )
 
 // Outputs of various workflow types.
@@ -206,6 +207,23 @@ type ReproCOutputs struct {
 	ReproducedCrashReport string
 	OtherCrashReports     []string
 	EquivalenceAnalysis   string
+}
+
+// RuntimeExperimentOutputs is the durable, machine-readable result of a
+// semantic experiment. Verdicts are deliberately strings so old dashboard
+// records remain forward compatible when new evidence levels are added.
+type RuntimeExperimentOutputs struct {
+	ManifestID        string
+	ProgramSyz        string
+	ExecutionCachedID string
+	ObservedEvents    []string `json:",omitempty"`
+	Observation       string   `json:",omitempty"`
+	OracleVerdict     string
+	OracleReason      string
+	NegativeControl   string `json:",omitempty"`
+	Replays           int    `json:",omitempty"`
+	Success           bool
+	Reason            string `json:",omitempty"`
 }
 
 type PatchTriageArgs struct {

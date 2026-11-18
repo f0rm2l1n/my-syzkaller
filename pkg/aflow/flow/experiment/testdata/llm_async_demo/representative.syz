@@ -1,0 +1,5 @@
+fd = openat$llm_async(0xffffffffffffff9c, "/dev/llm_async_demo", 2, 0)
+ioctl$LLM_ASYNC_DELAY(fd, 0x40044c03, &(0x7f0000000000)=0x14)
+ioctl$LLM_ASYNC_SUBMIT(fd, 0x4c01, 0)
+ioctl$LLM_ASYNC_CANCEL(fd, 0x4c02, 0)
+close(fd)
