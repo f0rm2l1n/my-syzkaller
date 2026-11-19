@@ -25,8 +25,18 @@ import (
 // Build action builds the Linux kernel from the given sources,
 // outputs directory with build artifacts.
 var Build = aflow.NewFuncAction("kernel-builder", buildKernel)
+var BuildKeepArtifacts = aflow.NewFuncAction("kernel-builder-keep-artifacts", buildKernelKeepArtifacts)
 
 type buildArgs struct {
+	TargetOS     string
+	TargetArch   string
+	TargetVMArch string `json:",omitempty"`
+	KernelSrc    string
+	KernelCommit string
+	KernelConfig string
+}
+
+type buildKeepArtifactsArgs struct {
 	TargetOS     string
 	TargetArch   string
 	TargetVMArch string `json:",omitempty"`
@@ -118,6 +128,12 @@ func BuildKernel(buildDir, srcDir, cfg, targetOS, targetArch, targetVMArch strin
 		image:               true,
 		target.KernelObject: true,
 		compileCommands:     true,
+		// External fixture modules must be built against the exact kernel
+		// object tree used by the VM. Keep the exported symbol CRCs and the
+		// signing helper so a later module build does not silently target a
+		// different kernel or fall back to an unrelated toolchain.
+		"vmlinux.symvers":   true,
+		"scripts/sign-file": true,
 	}
 	return root.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -131,15 +147,26 @@ func BuildKernel(buildDir, srcDir, cfg, targetOS, targetArch, targetVMArch strin
 }
 
 func buildKernel(ctx *aflow.Context, args buildArgs) (buildResult, error) {
+	return buildKernelWithOptions(ctx, args, false)
+}
+
+func buildKernelKeepArtifacts(ctx *aflow.Context, args buildKeepArtifactsArgs) (buildResult, error) {
+	return buildKernelWithOptions(ctx, buildArgs{
+		TargetOS: args.TargetOS, TargetArch: args.TargetArch, TargetVMArch: args.TargetVMArch,
+		KernelSrc: args.KernelSrc, KernelCommit: args.KernelCommit, KernelConfig: args.KernelConfig,
+	}, true)
+}
+
+func buildKernelWithOptions(ctx *aflow.Context, args buildArgs, keepBuildArtifacts bool) (buildResult, error) {
 	// The target must be part of the key: BuildKernel patches the config depending on the
 	// architecture, so the same config may produce different kernels for different targets.
 	// The source description is part of the key as well, because the build artifacts refer
 	// to the source dir, which changes location whenever we change the way we check it out.
-	desc := fmt.Sprintf("kernel target %v, source %v, kernel config hash %v",
+	desc := fmt.Sprintf("kernel target %v, source %v, kernel config hash %v, keep build artifacts %v",
 		mgrconfig.FormatTarget(args.TargetOS, args.TargetVMArch, args.TargetArch),
-		srcCacheDesc(args.KernelCommit), hash.String(args.KernelConfig))
+		srcCacheDesc(args.KernelCommit), hash.String(args.KernelConfig), keepBuildArtifacts)
 	dir, err := ctx.Cache("build", desc, func(dir string) error {
-		return BuildKernel(dir, args.KernelSrc, args.KernelConfig, args.TargetOS, args.TargetArch, args.TargetVMArch, true)
+		return BuildKernel(dir, args.KernelSrc, args.KernelConfig, args.TargetOS, args.TargetArch, args.TargetVMArch, !keepBuildArtifacts)
 	})
 	return buildResult{KernelObj: dir}, err
 }

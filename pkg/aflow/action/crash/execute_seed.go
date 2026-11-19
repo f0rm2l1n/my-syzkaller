@@ -20,6 +20,9 @@ import (
 type ExecuteSeedArgs struct {
 	TargetConfig
 	ReproSyz string
+	// CacheSalt forces a fresh execution for semantic replay attempts while
+	// keeping the ordinary seed execution cache behavior unchanged.
+	CacheSalt string
 }
 
 const deserializationErrorHelp = `
@@ -33,6 +36,17 @@ Syzlang Syntax Reminders:
 // It differs from ReproduceFuncWithCoverage in that it forces threaded mode and
 // returns coverage data even if the execution fails with an error (e.g., timeout).
 func ExecuteSeedFunc(ctx *aflow.Context, args ExecuteSeedArgs) (string, error) {
+	return executeSeedFunc(ctx, args, false)
+}
+
+// ExecuteSeedFuncWithEvidence has the same execution semantics as
+// ExecuteSeedFunc, but returns the cache ID for guest execution failures so a
+// semantic experiment can retain crash, timeout and console evidence.
+func ExecuteSeedFuncWithEvidence(ctx *aflow.Context, args ExecuteSeedArgs) (string, error) {
+	return executeSeedFunc(ctx, args, true)
+}
+
+func executeSeedFunc(ctx *aflow.Context, args ExecuteSeedArgs, keepFailureEvidence bool) (string, error) {
 	if args.TargetArch == "" {
 		args.TargetArch = targets.AMD64
 	}
@@ -66,6 +80,9 @@ func ExecuteSeedFunc(ctx *aflow.Context, args ExecuteSeedArgs) (string, error) {
 		" vm %v, vm config hash %v, syz repro hash %v",
 		args.KernelCommit, hash.String(args.KernelConfig), imageHash.String(),
 		args.Type, hash.String(args.VM), hash.String(fullSyz))
+	if args.CacheSalt != "" {
+		desc += fmt.Sprintf(", cache salt %v", args.CacheSalt)
+	}
 	cached, cachedID, err := aflow.CacheObject(ctx, "seed-exec", desc, func() (cachedExecution, error) {
 		var res cachedExecution
 		res.GeneratedSyz = args.ReproSyz
@@ -111,10 +128,10 @@ func ExecuteSeedFunc(ctx *aflow.Context, args ExecuteSeedArgs) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if cached.Error != "" {
+	if cached.Error != "" && !keepFailureEvidence {
 		return "", aflow.BadCallError("%s", cached.Error)
 	}
-	if cached.BugTitle != "" {
+	if cached.BugTitle != "" && !keepFailureEvidence {
 		return "", aflow.BadCallError("kernel crashed: %s", cached.BugTitle)
 	}
 

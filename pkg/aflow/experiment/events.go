@@ -32,11 +32,15 @@ func ParseEvents(output string) ([]Event, []string) {
 	s := bufio.NewScanner(strings.NewReader(output))
 	for s.Scan() {
 		line := strings.TrimSpace(s.Text())
-		if !strings.HasPrefix(line, "LLMEXP ") {
+		// Kernel console lines normally carry a timestamp/task prefix, for
+		// example "[  12.345678][ T42] LLMEXP ...". Locate the stable
+		// marker instead of requiring it at byte zero.
+		marker := strings.Index(line, "LLMEXP ")
+		if marker < 0 {
 			continue
 		}
 		fields := map[string]string{}
-		for _, field := range strings.Fields(strings.TrimPrefix(line, "LLMEXP ")) {
+		for _, field := range strings.Fields(line[marker+len("LLMEXP "):]) {
 			key, value, ok := strings.Cut(field, "=")
 			if ok {
 				fields[key] = value

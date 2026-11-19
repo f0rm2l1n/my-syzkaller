@@ -22,6 +22,7 @@ MODULE_PARM_DESC(buggy_release, "emit the release event before callback completi
 
 struct llm_async_ctx {
 	struct work_struct work;
+	struct completion callback_started;
 	struct completion callback_done;
 	unsigned int generation;
 	unsigned int delay_ms;
@@ -34,7 +35,7 @@ static void llm_event(struct llm_async_ctx *ctx, const char *kind, const char *s
 {
 	pr_info("LLMEXP seq=%u object=ctx generation=%u cpu=%u task=%d kind=%s state=%s result=0\n",
 		(unsigned int)atomic_inc_return(&next_generation), ctx->generation,
-		smp_processor_id(), current->pid, kind, state);
+		raw_smp_processor_id(), current->pid, kind, state);
 }
 
 static void llm_work(struct work_struct *work)
@@ -42,6 +43,7 @@ static void llm_work(struct work_struct *work)
 	struct llm_async_ctx *ctx = container_of(work, struct llm_async_ctx, work);
 
 	llm_event(ctx, "callback_enter", "running");
+	complete(&ctx->callback_started);
 	if (ctx->delay_ms)
 		msleep(ctx->delay_ms);
 	llm_event(ctx, "callback_exit", "done");
@@ -57,6 +59,7 @@ static int llm_open(struct inode *inode, struct file *file)
 		return -ENOMEM;
 	INIT_WORK(&ctx->work, llm_work);
 	init_completion(&ctx->callback_done);
+	init_completion(&ctx->callback_started);
 	ctx->generation = (unsigned int)atomic_inc_return(&next_generation);
 	file->private_data = ctx;
 	llm_event(ctx, "create", "created");
@@ -76,6 +79,10 @@ static long llm_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return -EBUSY;
 		ctx->submitted = true;
 		llm_event(ctx, "submit", "queued");
+		/* Make the calibration scenario deterministic: submit returns only
+		 * after the asynchronous callback has entered, while delay_ms keeps
+		 * it running long enough for buggy release to race its completion. */
+		wait_for_completion(&ctx->callback_started);
 		return 0;
 	case LLM_ASYNC_CANCEL:
 		if (!ctx->submitted)

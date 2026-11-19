@@ -25,6 +25,7 @@ const (
 	WorkflowBisectCause        = WorkflowType("bisect-cause")
 	WorkflowBisectFix          = WorkflowType("bisect-fix")
 	WorkflowRuntimeExperiment  = WorkflowType("runtime-guided-experiment")
+	WorkflowRuntimeStandalone  = WorkflowType("runtime-guided-experiment-standalone")
 )
 
 // Outputs of various workflow types.
@@ -224,6 +225,19 @@ type RuntimeExperimentOutputs struct {
 	Replays           int    `json:",omitempty"`
 	Success           bool
 	Reason            string `json:",omitempty"`
+}
+
+// RuntimeStandaloneOutputs is the durable result of a standalone semantic
+// experiment. PackageDir points at the host-written canonical artifact.
+type RuntimeStandaloneOutputs struct {
+	PackageID        string
+	PackageDir       string
+	Status           string
+	OracleVerdict    string
+	ReplayPassed     bool
+	CompletedReplays int
+	ProposalCount    int
+	Reason           string `json:",omitempty"`
 }
 
 type PatchTriageArgs struct {
